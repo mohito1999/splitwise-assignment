@@ -8,8 +8,8 @@ A simple web application for splitting expenses among groups of people. Built wi
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/expense-splitter.git
-   cd expense-splitter
+   git clone https://github.com/mohito1999/splitwise-assignment.git
+   cd splitwise-assignment
 2. Build and start the application:
     ```bash
     docker-compose up --build
