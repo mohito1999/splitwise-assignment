@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Create New Group</h2>
+<form method="post" action="/create-group">
+    <div class="mb-3">
+        <label class="form-label">Group Name:</label>
+        <input type="text" name="group_name" class="form-control" required>
+    </div>
+    
+    <div id="users-container">
+        <div class="user-entry mb-3">
+            <h5>User 1</h5>
+            <div class="row">
+                <div class="col">
+                    <input type="text" name="user_names[]" class="form-control" placeholder="Name" required>
+                </div>
+                <div class="col">
+                    <input type="email" name="user_emails[]" class="form-control" placeholder="Email" required>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <button type="button" class="btn btn-secondary mb-3" onclick="addUserField()">Add Another User</button>
+    <button type="submit" class="btn btn-primary">Create Group</button>
+</form>
+
+<script>
+let userCount = 1;
+function addUserField() {
+    userCount++;
+    const container = document.getElementById('users-container');
+    const div = document.createElement('div');
+    div.className = 'user-entry mb-3';
+    div.innerHTML = `
+        <h5>User ${userCount}</h5>
+        <div class="row">
+            <div class="col">
+                <input type="text" name="user_names[]" class="form-control" placeholder="Name" required>
+            </div>
+            <div class="col">
+                <input type="email" name="user_emails[]" class="form-control" placeholder="Email" required>
+            </div>
+        </div>
+    `;
+    container.appendChild(div);
+}
+</script>
+{% endblock %}
