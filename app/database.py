@@ -32,3 +32,36 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def add_expense_columns():
+    engine = create_engine(DATABASE_URL)
+    with engine.connect() as conn:
+        # Add description column if it doesn't exist
+        conn.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='expenses' AND column_name='description') THEN
+                ALTER TABLE expenses ADD COLUMN description VARCHAR;
+                UPDATE expenses SET description = 'Expense' WHERE description IS NULL;
+            END IF;
+        END $$;
+        """)
+        
+        # Add created_at column if it doesn't exist
+        conn.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='expenses' AND column_name='created_at') THEN
+                ALTER TABLE expenses ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+                UPDATE expenses SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;
+            END IF;
+        END $$;
+        """)
+        conn.commit()
+
+# Add this to your create_tables function
+def create_tables():
+    Base.metadata.create_all(bind=engine)
+    add_expense_columns()  # Add this line

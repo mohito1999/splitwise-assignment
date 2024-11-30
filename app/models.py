@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime
 from sqlalchemy.orm import relationship
 from .database import Base
+from datetime import datetime
 
 
 class Group(Base):
@@ -45,11 +46,13 @@ class Expense(Base):
     group_id = Column(Integer, ForeignKey('groups.id'))
     added_by = Column(Integer, ForeignKey('users.id'))
     amount = Column(Float)
-    split_type = Column(String)  # e.g., "equal", "percent", "exact"
-    date = Column(Date)
+    description = Column(String)
+    split_type = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     group = relationship("Group", back_populates="expenses")
     added_by_user = relationship("User", back_populates="expenses_added")
+    user = relationship("User", foreign_keys=[added_by])
 
 
 class Balance(Base):

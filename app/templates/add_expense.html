@@ -4,53 +4,123 @@
 <form method="post" action="/add-expense">
     <div class="mb-3">
         <label class="form-label">Group:</label>
-        <select name="group_id" class="form-select" required>
+        <select name="group_id" class="form-select" required onchange="loadGroupUsers(this.value)">
+            <option value="">Select a group</option>
             {% for group in groups %}
                 <option value="{{ group.id }}">{{ group.name }}</option>
             {% endfor %}
         </select>
     </div>
 
-    <div class="mb-3">
-        <label class="form-label">Paid By:</label>
-        <select name="added_by" class="form-select" required>
-            {% for user in users %}
-                <option value="{{ user.id }}">{{ user.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div class="mb-3">
-        <label class="form-label">Amount:</label>
-        <input type="number" step="0.01" name="amount" class="form-control" required>
-    </div>
-
-    <div class="mb-3">
-        <label class="form-label">Split Type:</label>
-        <select name="split_type" class="form-select" onchange="toggleSplitType(this.value)" required>
-            <option value="equal">Equal</option>
-            <option value="percent">Percentage</option>
-        </select>
-    </div>
-
-    <div id="percent-splits" style="display: none;">
-        <h5>Percentage Splits</h5>
-        {% for user in users %}
+    <div id="user-fields" style="display: none;">
         <div class="mb-3">
-            <label class="form-label">{{ user.name }}:</label>
-            <input type="number" step="0.1" name="percentages[]" class="form-control" 
-                   data-user-id="{{ user.id }}" placeholder="Percentage">
+            <label class="form-label">Paid By:</label>
+            <select name="added_by" class="form-select" required id="paid-by-select">
+                <!-- Will be populated by JavaScript -->
+            </select>
         </div>
-        {% endfor %}
-    </div>
 
-    <button type="submit" class="btn btn-primary">Add Expense</button>
+        <div class="mb-3">
+            <label class="form-label">Amount:</label>
+            <input type="number" step="0.01" name="amount" class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Description:</label>
+            <input type="text" name="description" class="form-control" required 
+                   placeholder="What was this expense for?">
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Split Type:</label>
+            <select name="split_type" class="form-select" onchange="toggleSplitType(this.value)" required>
+                <option value="equal">Equal</option>
+                <option value="percent">Percentage</option>
+            </select>
+        </div>
+
+        <div id="percent-splits" style="display: none;">
+            <h5>Percentage Splits</h5>
+            <div id="percentage-inputs">
+                <!-- Will be populated by JavaScript -->
+            </div>
+            <div id="total-percentage" class="alert alert-info">
+                Total: <span id="percentage-sum">0</span>%
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Add Expense</button>
+    </div>
 </form>
 
 <script>
+async function loadGroupUsers(groupId) {
+    if (!groupId) {
+        document.getElementById('user-fields').style.display = 'none';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/group-users/${groupId}`);
+        const users = await response.json();
+        
+        // Populate paid-by dropdown
+        const paidBySelect = document.getElementById('paid-by-select');
+        paidBySelect.innerHTML = users.map(user => 
+            `<option value="${user.id}">${user.name}</option>`
+        ).join('');
+        
+        // Populate percentage splits
+        const percentageInputs = document.getElementById('percentage-inputs');
+        percentageInputs.innerHTML = users.map(user => `
+            <div class="mb-3">
+                <label class="form-label">${user.name}:</label>
+                <input type="number" 
+                       step="0.1" 
+                       name="percentages" 
+                       class="form-control percentage-input" 
+                       data-user-id="${user.id}" 
+                       placeholder="Percentage"
+                       value="0">
+            </div>
+        `).join('');
+        
+        // Show the form fields
+        document.getElementById('user-fields').style.display = 'block';
+        
+        // Initialize percentage calculation
+        initializePercentageCalculation();
+    } catch (error) {
+        console.error('Error loading group users:', error);
+    }
+}
+
 function toggleSplitType(value) {
     const percentSplits = document.getElementById('percent-splits');
     percentSplits.style.display = value === 'percent' ? 'block' : 'none';
+}
+
+function initializePercentageCalculation() {
+    const percentageInputs = document.querySelectorAll('.percentage-input');
+    const percentageSum = document.getElementById('percentage-sum');
+    
+    function updateTotal() {
+        let total = 0;
+        percentageInputs.forEach(input => {
+            total += parseFloat(input.value || 0);
+        });
+        percentageSum.textContent = total.toFixed(1);
+        
+        if (Math.abs(total - 100) < 0.01) {
+            percentageSum.style.color = 'green';
+        } else {
+            percentageSum.style.color = 'red';
+        }
+    }
+    
+    percentageInputs.forEach(input => {
+        input.addEventListener('input', updateTotal);
+    });
 }
 </script>
 {% endblock %}

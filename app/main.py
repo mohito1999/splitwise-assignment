@@ -8,6 +8,8 @@ import json
 from . import models, database
 from .database import get_db
 from pydantic import BaseModel
+from fastapi import HTTPException
+from sqlalchemy.orm import joinedload
 
 app = FastAPI()
 templates = Jinja2Templates(directory="app/templates")
@@ -30,10 +32,54 @@ class PercentSplit(BaseModel):
 
 @app.get("/")
 def home(request: Request, db: Session = Depends(get_db)):
+    # Get groups with their members and balances
     groups = db.query(models.Group).all()
+    
+    # Create a dictionary to store balances for each group
+    group_balances = {}
+    
+    for group in groups:
+        balances = db.query(models.Balance).filter(
+            models.Balance.group_id == group.id
+        ).all()
+        
+        # Get all users in the group
+        group_users = db.query(models.User).join(models.GroupMembership).filter(
+            models.GroupMembership.group_id == group.id
+        ).all()
+        
+        # Create a balance summary for each user
+        user_balances = {}
+        for user in group_users:
+            # Money user owes to others
+            owes = db.query(models.Balance).filter(
+                models.Balance.group_id == group.id,
+                models.Balance.user_id == user.id
+            ).all()
+            
+            # Money others owe to user
+            owed = db.query(models.Balance).filter(
+                models.Balance.group_id == group.id,
+                models.Balance.owe_to == user.id
+            ).all()
+            
+            total_owes = sum(balance.amount for balance in owes)
+            total_owed = sum(balance.amount for balance in owed)
+            net_balance = total_owed - total_owes
+            
+            user_balances[user.id] = {
+                "user": user,
+                "net_balance": net_balance,
+                "owes_details": [(db.query(models.User).get(b.owe_to), b.amount) for b in owes],
+                "owed_by_details": [(db.query(models.User).get(b.user_id), b.amount) for b in owed]
+            }
+            
+        group_balances[group.id] = user_balances
+
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "groups": groups
+        "groups": groups,
+        "group_balances": group_balances
     })
 
 @app.get("/create-group")
@@ -44,8 +90,8 @@ def create_group_form(request: Request):
 async def create_group_submit(
     request: Request,
     group_name: str = Form(...),
-    user_names: List[str] = Form(...),
-    user_emails: List[str] = Form(...),
+    user_names: list = Form(...),
+    user_emails: list = Form(...),
     db: Session = Depends(get_db)
 ):
     # Create group
@@ -74,11 +120,9 @@ async def create_group_submit(
 @app.get("/add-expense")
 def add_expense_form(request: Request, db: Session = Depends(get_db)):
     groups = db.query(models.Group).all()
-    users = db.query(models.User).all()
     return templates.TemplateResponse("add_expense.html", {
         "request": request,
         "groups": groups,
-        "users": users
     })
 
 @app.post("/add-expense")
@@ -87,15 +131,16 @@ async def add_expense_submit(
     group_id: int = Form(...),
     added_by: int = Form(...),
     amount: float = Form(...),
+    description: str = Form(...),
     split_type: str = Form(...),
     percentages: List[float] = Form(None),
     db: Session = Depends(get_db)
 ):
+    users = db.query(models.User).join(models.GroupMembership).filter(
+        models.GroupMembership.group_id == group_id
+    ).all()
+
     if split_type == "equal":
-        # Use your existing equal split logic
-        users = db.query(models.User).join(models.GroupMembership).filter(
-            models.GroupMembership.group_id == group_id
-        ).all()
         split_amount = amount / len(users)
         
         for user in users:
@@ -109,13 +154,20 @@ async def add_expense_submit(
                 db.add(balance)
     
     elif split_type == "percent":
-        users = db.query(models.User).join(models.GroupMembership).filter(
-            models.GroupMembership.group_id == group_id
-        ).all()
+        if not percentages:
+            raise HTTPException(status_code=400, detail="Percentages required for percent split")
+            
+        # Convert percentages to float if they're not None
+        percentages = [float(p) if p else 0 for p in percentages]
+        
+        # Validate total is approximately 100%
+        total_percentage = sum(percentages)
+        if abs(total_percentage - 100.0) > 0.01:  # Allow small floating-point difference
+            raise HTTPException(status_code=400, detail=f"Percentages must sum to 100% (got {total_percentage}%)")
         
         for user, percentage in zip(users, percentages):
-            if user.id != added_by and percentage:
-                split_amount = (float(percentage) / 100.0) * amount
+            if user.id != added_by and percentage > 0:
+                split_amount = (percentage / 100.0) * amount
                 balance = models.Balance(
                     group_id=group_id,
                     user_id=user.id,
@@ -129,12 +181,13 @@ async def add_expense_submit(
         group_id=group_id,
         added_by=added_by,
         amount=amount,
+        description=description,
         split_type=split_type
     )
     db.add(new_expense)
     db.commit()
     
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url=f"/group/{group_id}/ledger", status_code=303)
 
 @app.post("/delete-group/{group_id}")
 def delete_group_submit(group_id: int, db: Session = Depends(get_db)):
@@ -212,3 +265,65 @@ async def remove_user_from_group(
     
     db.commit()
     return RedirectResponse(url=f"/manage-group-users/{group_id}", status_code=303)
+
+@app.get("/api/group-users/{group_id}")
+async def get_group_users(group_id: int, db: Session = Depends(get_db)):
+    users = db.query(models.User).join(models.GroupMembership).filter(
+        models.GroupMembership.group_id == group_id
+    ).all()
+    
+    return [{"id": user.id, "name": user.name} for user in users]
+
+@app.get("/group/{group_id}/ledger")
+def group_ledger(request: Request, group_id: int, db: Session = Depends(get_db)):
+    group = db.query(models.Group).filter(models.Group.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    
+    # Get all expenses for this group, including the user who added the expense
+    expenses = db.query(models.Expense)\
+        .filter(models.Expense.group_id == group_id)\
+        .options(joinedload(models.Expense.user))\
+        .order_by(models.Expense.created_at.desc())\
+        .all()
+    
+    # Get all balances
+    balances = db.query(models.Balance).filter(
+        models.Balance.group_id == group_id
+    ).all()
+    
+    # Get all users in the group
+    group_users = db.query(models.User).join(models.GroupMembership).filter(
+        models.GroupMembership.group_id == group_id
+    ).all()
+    
+    # Calculate user balances
+    user_balances = {}
+    for user in group_users:
+        # Money user owes to others
+        owes = db.query(models.Balance).filter(
+            models.Balance.group_id == group_id,
+            models.Balance.user_id == user.id
+        ).all()
+        
+        # Money others owe to user
+        owed = db.query(models.Balance).filter(
+            models.Balance.group_id == group_id,
+            models.Balance.owe_to == user.id
+        ).all()
+        
+        total_owes = sum(balance.amount for balance in owes)
+        total_owed = sum(balance.amount for balance in owed)
+        net_balance = total_owed - total_owes
+        
+        user_balances[user.id] = {
+            "user": user,
+            "net_balance": net_balance
+        }
+    
+    return templates.TemplateResponse("group_ledger.html", {
+        "request": request,
+        "group": group,
+        "expenses": expenses,
+        "balances": user_balances
+    })

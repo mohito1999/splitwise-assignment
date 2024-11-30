@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <h2>{{ group.name }} - Expense Ledger</h2>
+    
+    <!-- Summary Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Current Balances</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Net Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user_id, balance_info in balances.items() %}
+                        <tr>
+                            <td>{{ balance_info.user.name }}</td>
+                            <td class="{{ 'text-success' if balance_info.net_balance > 0 else 'text-danger' if balance_info.net_balance < 0 else '' }}">
+                                {{ "%.2f"|format(balance_info.net_balance) }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expenses List -->
+    <div class="card">
+        <div class="card-header">
+            <h4>All Expenses</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Paid By</th>
+                            <th>Amount</th>
+                            <th>Split Type</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for expense in expenses %}
+                        <tr>
+                            <td>{{ expense.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>{{ expense.description }}</td>
+                            <td>{{ expense.user.name }}</td>
+                            <td>{{ "%.2f"|format(expense.amount) }}</td>
+                            <td>{{ expense.split_type.capitalize() }}</td>
+                            <td>
+                                <button class="btn btn-sm btn-info" 
+                                        data-bs-toggle="collapse" 
+                                        data-bs-target="#expense-{{ expense.id }}">
+                                    Show Details
+                                </button>
+                            </td>
+                        </tr>
+                        <tr class="collapse" id="expense-{{ expense.id }}">
+                            <td colspan="6">
+                                <div class="card card-body bg-light">
+                                    <h6>Split Details:</h6>
+                                    {% for split in expense.splits %}
+                                    <div>
+                                        {{ split.user.name }}: 
+                                        {{ "%.2f"|format(split.amount) }}
+                                        {% if expense.split_type == 'percent' %}
+                                        ({{ "%.1f"|format(split.percentage) }}%)
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
