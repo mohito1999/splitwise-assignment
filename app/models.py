@@ -23,7 +23,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
 
     memberships = relationship("GroupMembership", back_populates="user")
-    expenses_added = relationship("Expense", back_populates="added_by_user")
+    expenses_added = relationship("Expense", back_populates="user")
     balances_owed = relationship("Balance", foreign_keys="[Balance.user_id]", back_populates="user")
     balances_to_receive = relationship("Balance", foreign_keys="[Balance.owe_to]", back_populates="owed_to")
 
@@ -52,7 +52,7 @@ class Expense(Base):
 
     group = relationship("Group", back_populates="expenses")
     added_by_user = relationship("User", back_populates="expenses_added")
-    user = relationship("User", foreign_keys=[added_by])
+    user = relationship("User", foreign_keys=[added_by], back_populates="expenses_added", overlaps="added_by_user")
 
 
 class Balance(Base):

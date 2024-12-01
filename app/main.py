@@ -67,11 +67,15 @@ def home(request: Request, db: Session = Depends(get_db)):
             total_owed = sum(balance.amount for balance in owed)
             net_balance = total_owed - total_owes
             
+            # Add details for owes and owed_by
+            owes_details = [(db.query(models.User).filter(models.User.id == balance.owe_to).first(), balance.amount) for balance in owes]
+            owed_by_details = [(db.query(models.User).filter(models.User.id == balance.user_id).first(), balance.amount) for balance in owed]
+            
             user_balances[user.id] = {
                 "user": user,
                 "net_balance": net_balance,
-                "owes_details": [(db.query(models.User).get(b.owe_to), b.amount) for b in owes],
-                "owed_by_details": [(db.query(models.User).get(b.user_id), b.amount) for b in owed]
+                "owes_details": owes_details,
+                "owed_by_details": owed_by_details
             }
             
         group_balances[group.id] = user_balances
@@ -141,7 +145,7 @@ async def add_expense_submit(
     ).all()
 
     if split_type == "equal":
-        split_amount = amount / len(users)
+        split_amount = amount / len(users)  # Correctly divide among all users
         
         for user in users:
             if user.id != added_by:
@@ -150,6 +154,15 @@ async def add_expense_submit(
                     user_id=user.id,
                     owe_to=added_by,
                     amount=split_amount
+                )
+                db.add(balance)
+            else:
+                # Add a balance entry for the payer to reflect the amount they are owed
+                balance = models.Balance(
+                    group_id=group_id,
+                    user_id=added_by,
+                    owe_to=user.id,
+                    amount=-split_amount * (len(users) - 1)
                 )
                 db.add(balance)
     
